@@ -70,6 +70,7 @@ func deleteAccount(w http.ResponseWriter, r *http.Request) {
 func updateAccount(w http.ResponseWriter, r *http.Request) {
 	db := connectDB()
 	defer db.Close()
+
 	var account Account
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&account)
@@ -88,8 +89,19 @@ func updateAccount(w http.ResponseWriter, r *http.Request) {
 	cnt, _ := result.RowsAffected();
 	if(cnt == 0) {
 		w.Write([]byte("Could not find account with id: " + strconv.Itoa(account.Id)))
-	} else {
-		fmt.Println(result)
+	} else { // check redis
+		rdb := connectRedisClient()
+		defer rdb.Close()
+		params := mux.Vars(r)
+		_, err := rdb.Get(ctx, params["id"]).Result()
+		if(err == nil) {
+			result := []Account{}
+			result = append(result, account)
+    		json, _ := json.MarshalIndent(result, "", "  ")
+			rdb.Set(ctx, params["id"], json, time.Minute)
+		} else if (err != redis.Nil) {
+			fmt.Println(err)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -151,7 +163,7 @@ func getAccountByID(w http.ResponseWriter, r *http.Request) {
 		w.Write(json)
 
 		// write into redis
-		rdb.Set(ctx, params["id"], json, time.Hour)
+		rdb.Set(ctx, params["id"], json, time.Minute)
 		return
 	} else if (err != nil) {
 		fmt.Println(err)
